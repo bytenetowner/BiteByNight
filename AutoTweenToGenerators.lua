@@ -3,21 +3,24 @@ local Players = game:GetService("Players")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local function StealthTeleport(TargetPart)
+local function StealthTeleport(TargetPart, SideOffset)
 	local Character = LocalPlayer.Character
 	local Root = Character and Character:FindFirstChild("HumanoidRootPart")
-	if not Root then return end
+	if not Root then return false end
 
 	local TargetPosition = TargetPart.Position
 	local Distance = (Root.Position - TargetPosition).Magnitude
 	local HorizontalSpeed = 12
 	local HorizontalDuration = math.max(Distance / HorizontalSpeed, 2)
 
-	local ForwardOffset = TargetPart.CFrame.LookVector * 5
+	local OffsetCFrame = SideOffset or CFrame.new(0, 0, 5) 
+	local TargetCFrame = TargetPart.CFrame * OffsetCFrame
+	
 	local UnderStart = Root.CFrame * CFrame.new(0, -25, 0)
-	local UnderTarget = (TargetPart.CFrame + ForwardOffset) * CFrame.new(0, -20, 0)
-	local FinalPos = CFrame.new((TargetPart.CFrame + ForwardOffset).Position, TargetPosition)
+	local UnderTarget = TargetCFrame * CFrame.new(0, -20, 0)
+	local FinalPos = CFrame.new(TargetCFrame.Position, TargetPosition)
 
 	local VerticalFastInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 	local HorizontalSlowInfo = TweenInfo.new(HorizontalDuration, Enum.EasingStyle.Linear)
@@ -38,57 +41,62 @@ local function StealthTeleport(TargetPart)
 	VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
 	task.wait(3)
 	VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+	task.wait(0.5)
+
+	if PlayerGui:FindFirstChild("Gen") then
+		return true
+	end
+	
+	return false
 end
 
 local function GetGeneratorsFolder()
 	local Maps = workspace:FindFirstChild("MAPS")
-	if not Maps then return nil end
-	
-	local GameMap = Maps:FindFirstChild("GAME MAP")
-	if not GameMap then return nil end
-	
-	return GameMap:FindFirstChild("Generators")
+	local GameMap = Maps and Maps:FindFirstChild("GAME MAP")
+	return GameMap and GameMap:FindFirstChild("Generators")
 end
 
 local function StartGeneratorAutomation()
+	local Offsets = {
+		CFrame.new(0, 0, 5),
+		CFrame.new(5, 0, 0),
+		CFrame.new(-5, 0, 0)
+	}
+
 	while true do
 		task.wait(1)
 		
 		local Generators = GetGeneratorsFolder()
-		if not Generators then 
-			continue 
-		end
+		if not Generators then continue end
 
 		local Character = LocalPlayer.Character
-		if not Character or Character:GetAttribute("Team") ~= "Survivor" then 
-			continue 
-		end
+		if not Character or Character:GetAttribute("Team") ~= "Survivor" then continue end
 
-		local GeneratorList = Generators:GetChildren()
-		local FoundTarget = false
-
-		for _, Generator in ipairs(GeneratorList) do
+		for _, Generator in ipairs(Generators:GetChildren()) do
 			if not Generator:IsA("Model") then continue end
 			
 			local Progress = Generator:GetAttribute("Progress")
 			local Primary = Generator.PrimaryPart
 
 			if Progress and Progress < 100 and Primary then
-				FoundTarget = true
-				StealthTeleport(Primary)
+				local Success = false
+				
+				for _, Offset in ipairs(Offsets) do
+					Success = StealthTeleport(Primary, Offset)
+					if Success then break end
+					task.wait(0.5)
+				end
 
-				repeat
-					task.wait(1)
-					local CurrentGenerators = GetGeneratorsFolder()
-					if not CurrentGenerators or not Generator:IsDescendantOf(CurrentGenerators) then break end
-				until Generator:GetAttribute("Progress") >= 100
+				if Success then
+					repeat
+						task.wait(1)
+						local CurrentFolder = GetGeneratorsFolder()
+						if not CurrentFolder or not Generator:IsDescendantOf(CurrentFolder) or not PlayerGui:FindFirstChild("Gen") then break end
+					until Generator:GetAttribute("Progress") >= 100
+				end
 				
 				break
 			end
-		end
-		
-		if not FoundTarget then
-			task.wait(2)
 		end
 	end
 end
